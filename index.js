@@ -2,6 +2,10 @@
 
 var chalk = require('chalk');
 var symbols = require('./symbols');
+var _ = require("lodash");
+
+var fs = require('fs');
+var prompt = require('syncprompt');
 
 /**
  * The MochaReporter.
@@ -12,6 +16,10 @@ var symbols = require('./symbols');
  * @constructor
  */
 var MochaReporter = function (baseReporterDecorator, formatError, config) {
+
+
+
+
     // extend the base reporter
     baseReporterDecorator(this);
 
@@ -133,11 +141,12 @@ var MochaReporter = function (baseReporterDecorator, formatError, config) {
 
         var msg = diff.createPatch('string', err.actual, err.expected);
         var lines = msg.split('\n').splice(4);
-        return '\n      ' +
+        return '\n' +
             colors.success.print('+ expected') + ' ' +
             colors.error.print('- actual') +
             '\n\n' +
-            lines.map(cleanUp).filter(notBlank).join('\n');
+            lines.map(cleanUp).filter(notBlank).join('\n') +
+            '\n';
     }
 
     /**
@@ -193,12 +202,12 @@ var MochaReporter = function (baseReporterDecorator, formatError, config) {
 
         // legend
         msg = '\n' +
-            colors.success.print('expected') +
-            ' ' +
-            colors.error.print('actual') +
-            '\n\n' +
-            msg +
-            '\n';
+        colors.success.print('expected') +
+        ' ' +
+        colors.error.print('actual') +
+        '\n\n' +
+        msg +
+        '\n';
 
         // indent
         msg = msg.replace(/^/gm, '      ');
@@ -247,6 +256,29 @@ var MochaReporter = function (baseReporterDecorator, formatError, config) {
         return isCompleted;
     }
 
+    function printPrefixLine(item, depth) {
+        var line = repeatString('  ', depth);
+        line += item.name.replace(internalPrefix, '');
+        return line;
+    }
+
+    function confirmPrompt(snapshotData) {
+        var confirm = prompt("\nUpdate snaphot [y/n]?");
+        if (confirm === "y") {
+            saveSnapshot(snapshotData.name, snapshotData.actual);
+        }
+    }
+
+    function saveSnapshot(itName, data) {
+        var path = (config.mochaReporter.fixturePath || "./test/snapshots/") + _.snakeCase(itName) + ".js";
+        var data = '// generated snapshot do not modify it\ndefine(function(){\n	return '+data+'\n})\n';
+        fs.writeFile(path, data, function (err,data) {
+            if (err) {
+                return console.log(err);
+            }
+        });
+    }
+
     /**
      * Prints a single item
      *
@@ -261,8 +293,9 @@ var MochaReporter = function (baseReporterDecorator, formatError, config) {
                 return;
             }
 
-            // indent
-            var line = repeatString('  ', depth) + item.name.replace(internalPrefix, '');
+            // indent with line prefix
+            var line = printPrefixLine(item, depth);
+
 
             // it block
             if (item.type === 'it') {
@@ -322,29 +355,47 @@ var MochaReporter = function (baseReporterDecorator, formatError, config) {
         }
     }
 
+    function printStack(log, line, depth, ii, linesToLog, colors){
+        line += colors.error.print(formatError("stack trace start" , repeatString('  ', depth)));
+        for (ii; ii < linesToLog; ii++) {
+            line += colors.error.print(formatError(log[ii], repeatString('  ', depth)));
+        }
+        line += colors.error.print(formatError("stack trace end" , repeatString('  ', depth)));
+        return line;
+    }
+
     /**
      * Writes the failed test to the output
      *
      * @param {!object} suite The test suite
      * @param {number=} depth The indention.
      */
-    function printFailures(suite, depth) {
+    function handleFailures(suite, depth, breadcrumbs) {
+        breadcrumbs = breadcrumbs || "";
         var keys = Object.keys(suite);
         var length = keys.length;
         var i, item;
 
         for (i = 0; i < length; i++) {
+
             item = suite[keys[i]];
+            item.depth = depth || 0
 
             // start of a new suite
             if (item.isRoot) {
                 depth = 1;
             }
+            var ii = 0;
+
+
+            var snapshotData = false;
 
             // only print to output when test failed
             if (item.name && !item.success && !item.skipped) {
                 // indent
-                var line = repeatString('  ', depth) + item.name.replace(internalPrefix, '');
+                //var line = repeatString('  ', depth) + item.name.replace(internalPrefix, '');
+
+                var line = printPrefixLine(item, depth);
 
                 // it block
                 if (item.type === 'it') {
@@ -361,7 +412,7 @@ var MochaReporter = function (baseReporterDecorator, formatError, config) {
                     item.log = item.log || [];
                     var log = item.log.length ? item.log[0].split('\n') : [];
                     var linesToLog = config.mochaReporter.maxLogLines;
-                    var ii = 0;
+                    ii = 0;
 
                     // set number of lines to output
                     if (log.length < linesToLog) {
@@ -383,11 +434,13 @@ var MochaReporter = function (baseReporterDecorator, formatError, config) {
                             expected: expected
                         };
 
+
                         if (String(err.actual).match(/^".*"$/) && String(err.expected).match(/^".*"$/)) {
                             try {
                                 err.actual = JSON.parse(err.actual);
                                 err.expected = JSON.parse(err.expected);
-                            } catch (e) { }
+                            } catch (e) {
+                            }
                         }
 
                         // ensure that actual and expected are strings
@@ -396,31 +449,49 @@ var MochaReporter = function (baseReporterDecorator, formatError, config) {
                             err.expected = utils.stringify(expected);
                         }
 
+
                         // create diff
                         var diff = config.mochaReporter.showDiff === 'inline' ? inlineDiff(err) : unifiedDiff(err);
+
+                        item.diff = diff;
+
+                        snapshotData = {
+                            name: (_.snakeCase(breadcrumbs + _.upperFirst(item.rawName || ""))),
+                            actual: JSON.stringify(JSON.parse(actual)),
+                            expected: JSON.stringify(JSON.parse(expected)),
+                            diff: diff
+                        }
+
 
                         line += diff + '\n';
 
                         // print formatted stack trace after diff
-                        for (ii; ii < linesToLog; ii++) {
-                            line += colors.error.print(formatError(log[ii]));
-                        }
+                        line = printStack(log, line, depth, ii, linesToLog, colors);
                     } else {
-                        for (ii; ii < linesToLog; ii++) {
-                            line += colors.error.print(formatError(log[ii], repeatString('  ', depth)));
-                        }
+                        line = printStack(log, line, depth, ii, linesToLog, colors);
                     }
                 }
 
                 // use write method of baseReporter
                 self.write(line + '\n');
-            }
 
-            if (item.items) {
-                // print all child items
-                printFailures(item.items, depth + 1);
+
+                if (snapshotData !== false) {
+                    confirmPrompt(snapshotData);
+                }
+
+
+                if (item.items) {
+                    // print all child items
+                    handleFailures(item.items, depth + 1, breadcrumbs + (_.upperFirst(item.rawName) || ""));
+                    item.items = _.values(item.items);
+                }
             }
         }
+    }
+
+    function failureHandle() {
+
     }
 
     /**
@@ -462,6 +533,7 @@ var MochaReporter = function (baseReporterDecorator, formatError, config) {
 
             suite[description] = item;
 
+            item.rawName = description;
             item.name = description;
             item.isRoot = depth === 0;
             item.type = 'describe';
@@ -568,7 +640,7 @@ var MochaReporter = function (baseReporterDecorator, formatError, config) {
         isRunCompleted = true;
 
         self.write('\n' + colors.success.print('Finished in ' + formatTimeInterval(self.totalTime) + ' / ' +
-            formatTimeInterval(self.netTime) + ' @ ' + new Date().toTimeString()));
+        formatTimeInterval(self.netTime) + ' @ ' + new Date().toTimeString()));
         self.write('\n\n');
 
         if (browsers.length > 0 && !results.disconnected) {
@@ -591,10 +663,19 @@ var MochaReporter = function (baseReporterDecorator, formatError, config) {
                 self.write('\n');
 
                 if (outputMode !== 'noFailures') {
-                    self.write('\n' + chalk.underline.bold('FAILED TESTS:') + '\n');
-                    printFailures(self.allResults);
+                    //self.write('\n' + chalk.underline.bold('START FAILED TESTS') + '\n');
+                    handleFailures(self.allResults, 0, "");
+                    //console.log(JSON.stringify(_.values(self.allResults), null, 4));
+
+                    //self.write('\n' + chalk.underline.bold('END FAILED TESTS') + '\n');
+
+
+                    //failureHandle();
                 }
             }
+
+
+
         }
 
         if (outputMode === 'autowatch') {
