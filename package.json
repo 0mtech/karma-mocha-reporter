@@ -1,6 +1,6 @@
 {
-    "name": "karma-mocha-reporter",
-    "description": "Karma reporter with mocha style logging.",
+    "name": "karma-mocha-snapshot-reporter",
+    "description": "Karma reporter with mocha style logging with snapshots.",
     "version": "2.2.3",
     "homepage": "http://www.litixsoft.de/index.php?lang=en#modules",
     "author": "Litixsoft GmbH <info@litixsoft.de> (http://www.litixsoft.de)",
@@ -28,10 +28,10 @@
     ],
     "repository": {
         "type": "git",
-        "url": "https://github.com/litixsoft/karma-mocha-reporter.git"
+        "url": "https://github.com/0mtech/karma-mocha-snapshot-reporter.git"
     },
     "bugs": {
-        "url": "https://github.com/litixsoft/karma-mocha-reporter/issues"
+        "url": "https://github.com/0mtech/karma-mocha-snapshot-reporter/issues"
     },
     "keywords": [
         "karma-plugin",
@@ -45,7 +45,7 @@
     "licenses": [
         {
             "type": "MIT",
-            "url": "https://github.com/litixsoft/karma-mocha-reporter/blob/master/LICENSE"
+            "url": "https://github.com/0mtech/karma-mocha-snapshot-reporter/blob/master/LICENSE"
         }
     ],
     "main": "index.js",
